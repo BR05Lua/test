@@ -1,418 +1,639 @@
--- Modern Black & Red Social HUD with Executor Detection
--- Compatible with any executor (Synapse, ScriptWare, KRNL, etc.)
+-- Advanced Roblox Social HUD with Executor Spy System
+-- Detects executor via console prints and notifications
 
 -- Services
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
--- Configuration
-local CONFIG = {
-	THEME = {
-		Primary = Color3.fromRGB(0, 0, 0),      -- Black
-		Secondary = Color3.fromRGB(255, 42, 42), -- Red
-		Text = Color3.fromRGB(255, 255, 255),   -- White
-		Background = Color3.fromRGB(30, 30, 30) -- Dark Gray
-	},
-	
-	EXECUTORS = {
-		["Synapse X"] = {Color = Color3.fromRGB(255, 100, 100), Icon = "🔧"},
-		["ScriptWare"] = {Color = Color3.fromRGB(100, 150, 255), Icon = "⚙️"},
-		["KRNL"] = {Color = Color3.fromRGB(255, 200, 100), Icon = "🔨"},
-		["Fluxus"] = {Color = Color3.fromRGB(150, 100, 255), Icon = "🌀"},
-		["Electron"] = {Color = Color3.fromRGB(100, 255, 150), Icon = "⚡"},
-		["Comet"] = {Color = Color3.fromRGB(255, 150, 200), Icon = "☄️"},
-		["Oxygen U"] = {Color = Color3.fromRGB(100, 200, 255), Icon = "💨"},
-		["Unknown"] = {Color = Color3.fromRGB(150, 150, 150), Icon = "❓"}
-	},
-	
-	HUD_SETTINGS = {
-		Offset = Vector3.new(0, 3, 0), -- Above player's head
-		BillboardSize = UDim2.new(6, 0, 1.5, 0),
-		FadeDistance = 100 -- Distance at which HUD fades out
-	}
+-- Console Monitoring System
+local ConsoleSpy = {
+    DetectedExecutors = {},
+    KnownPrints = {
+        ["Synapse X"] = {"synapse", "synapse x", "cracked by synapse", "injected"},
+        ["KRNL"] = {"krnl", "krnl.place", "welcome to krnl"},
+        ["ScriptWare"] = {"scriptware", "script-ware", "sw"},
+        ["Fluxus"] = {"fluxus", "fluxteam", "fluxus executor"},
+        ["Electron"] = {"electron", "electron executor"},
+        ["Comet"] = {"comet", "comet executor"},
+        ["Oxygen U"] = {"oxygen", "oxygen u"},
+        ["JJSploit"] = {"jjspoil", "wearedevs"},
+        ["ProtoSmasher"] = {"protosmasher", "proto smasher"}
+    },
+    
+    Hooked = false,
+    OriginalPrint = nil,
+    OriginalWarn = nil,
+    OriginalError = nil
 }
 
--- Executor Detection
-local function detectExecutor()
-	-- Check for known executor signatures
-	if syn and syn.request then
-		return "Synapse X"
-	elseif identifyexecutor and identifyexecutor():find("ScriptWare") then
-		return "ScriptWare"
-	elseif KRNL_LOADED then
-		return "KRNL"
-	elseif fluxus and fluxus.version then
-		return "Fluxus"
-	elseif ELECTRON_LOADED then
-		return "Electron"
-	elseif getexecutorname and getexecutorname():find("Comet") then
-		return "Comet"
-	elseif OXYGEN_LOADED then
-		return "Oxygen U"
-	else
-		-- Try to detect by checking various executor-specific functions
-		if PROTOSMASHER_LOADED then
-			return "ProtoSmasher"
-		elseif is_sirhurt_closure then
-			return "SirHurt"
-		elseif is_sentinel_closure then
-			return "Sentinel"
-		elseif secure_load then
-			return "Calamari"
-		elseif crypt then
-			return "Crypt"
-		end
-		
-		-- If we can't detect, check common global variables
-		for executorName in pairs(CONFIG.EXECUTORS) do
-			if _G[executorName:gsub(" ", "_")] then
-				return executorName
-			end
-		end
-		
-		return "Unknown"
-	end
+-- Hook into print functions
+function ConsoleSpy:HookConsole()
+    if self.Hooked then return end
+    
+    self.OriginalPrint = print
+    self.OriginalWarn = warn
+    self.OriginalError = error
+    
+    -- Hook print function
+    local function hookedPrint(...)
+        local args = {...}
+        local message = table.concat(args, " ")
+        
+        -- Analyze for executor signatures
+        self:AnalyzeMessage(message:lower())
+        
+        -- Call original print
+        return self.OriginalPrint(...)
+    end
+    
+    -- Hook warn function
+    local function hookedWarn(...)
+        local args = {...}
+        local message = table.concat(args, " ")
+        
+        -- Analyze for executor signatures
+        self:AnalyzeMessage(message:lower())
+        
+        -- Call original warn
+        return self.OriginalWarn(...)
+    end
+    
+    -- Replace global functions
+    getgenv().print = hookedPrint
+    getgenv().warn = hookedWarn
+    
+    self.Hooked = true
+    print("[ConsoleSpy] Console monitoring activated")
 end
 
--- Create Social HUD Billboard
-local function createHUD(player)
-	local executor = detectExecutor()
-	local executorInfo = CONFIG.EXECUTORS[executor] or CONFIG.EXECUTORS["Unknown"]
-	
-	-- Create Billboard GUI
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = player.Name .. "_SocialHUD"
-	billboard.AlwaysOnTop = true
-	billboard.Size = CONFIG.HUD_SETTINGS.BillboardSize
-	billboard.StudsOffset = CONFIG.HUD_SETTINGS.Offset
-	billboard.MaxDistance = CONFIG.HUD_SETTINGS.FadeDistance
-	billboard.Enabled = false -- Start hidden
-	billboard.Adornee = player.Character and player.Character:FindFirstChild("Head")
-	billboard.Parent = player.Character and player.Character.Head or nil
-	
-	-- Main Frame
-	local mainFrame = Instance.new("Frame")
-	mainFrame.Name = "MainFrame"
-	mainFrame.Size = UDim2.new(1, 0, 1, 0)
-	mainFrame.BackgroundColor3 = CONFIG.THEME.Primary
-	mainFrame.BackgroundTransparency = 0.2
-	mainFrame.BorderColor3 = executorInfo.Color
-	mainFrame.BorderSizePixel = 2
-	mainFrame.Parent = billboard
-	
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 8)
-	corner.Parent = mainFrame
-	
-	-- Inner Frame (for content)
-	local innerFrame = Instance.new("Frame")
-	innerFrame.Name = "InnerFrame"
-	innerFrame.Size = UDim2.new(1, -10, 1, -10)
-	innerFrame.Position = UDim2.new(0, 5, 0, 5)
-	innerFrame.BackgroundColor3 = CONFIG.THEME.Background
-	innerFrame.BackgroundTransparency = 0.1
-	innerFrame.Parent = mainFrame
-	
-	local innerCorner = Instance.new("UICorner")
-	innerCorner.CornerRadius = UDim.new(0, 6)
-	innerCorner.Parent = innerFrame
-	
-	-- Executor Display
-	local executorFrame = Instance.new("Frame")
-	executorFrame.Name = "ExecutorFrame"
-	executorFrame.Size = UDim2.new(1, 0, 0.3, 0)
-	executorFrame.BackgroundTransparency = 1
-	executorFrame.Parent = innerFrame
-	
-	local executorIcon = Instance.new("TextLabel")
-	executorIcon.Name = "ExecutorIcon"
-	executorIcon.Size = UDim2.new(0.3, 0, 1, 0)
-	executorIcon.Text = executorInfo.Icon
-	executorIcon.TextColor3 = executorInfo.Color
-	executorIcon.TextScaled = true
-	executorIcon.BackgroundTransparency = 1
-	executorIcon.Font = Enum.Font.GothamBold
-	executorIcon.Parent = executorFrame
-	
-	local executorText = Instance.new("TextLabel")
-	executorText.Name = "ExecutorText"
-	executorText.Size = UDim2.new(0.7, 0, 1, 0)
-	executorText.Position = UDim2.new(0.3, 0, 0, 0)
-	executorText.Text = executor
-	executorText.TextColor3 = executorInfo.Color
-	executorText.TextScaled = true
-	executorText.BackgroundTransparency = 1
-	executorText.Font = Enum.Font.GothamSemibold
-	executorText.TextXAlignment = Enum.TextXAlignment.Left
-	executorText.Parent = executorFrame
-	
-	-- User Info
-	local userFrame = Instance.new("Frame")
-	userFrame.Name = "UserFrame"
-	userFrame.Size = UDim2.new(1, 0, 0.4, 0)
-	userFrame.Position = UDim2.new(0, 0, 0.3, 0)
-	userFrame.BackgroundTransparency = 1
-	userFrame.Parent = innerFrame
-	
-	local userName = Instance.new("TextLabel")
-	userName.Name = "UserName"
-	userName.Size = UDim2.new(1, 0, 0.6, 0)
-	userName.Text = player.Name
-	userName.TextColor3 = CONFIG.THEME.Text
-	userName.TextScaled = true
-	userName.BackgroundTransparency = 1
-	userName.Font = Enum.Font.GothamBold
-	userName.Parent = userFrame
-	
-	local userId = Instance.new("TextLabel")
-	userId.Name = "UserId"
-	userId.Size = UDim2.new(1, 0, 0.4, 0)
-	userId.Position = UDim2.new(0, 0, 0.6, 0)
-	userId.Text = "ID: " .. player.UserId
-	userId.TextColor3 = CONFIG.THEME.Secondary
-	userId.TextScaled = true
-	userId.BackgroundTransparency = 1
-	userId.Font = Enum.Font.GothamMedium
-	userId.Parent = userFrame
-	
-	-- Status Indicator
-	local statusFrame = Instance.new("Frame")
-	statusFrame.Name = "StatusFrame"
-	statusFrame.Size = UDim2.new(1, 0, 0.3, 0)
-	statusFrame.Position = UDim2.new(0, 0, 0.7, 0)
-	statusFrame.BackgroundTransparency = 1
-	statusFrame.Parent = innerFrame
-	
-	local micIcon = Instance.new("TextLabel")
-	micIcon.Name = "MicIcon"
-	micIcon.Size = UDim2.new(0.3, 0, 1, 0)
-	micIcon.Text = "🎤"
-	micIcon.TextColor3 = CONFIG.THEME.Secondary
-	micIcon.TextScaled = true
-	micIcon.BackgroundTransparency = 1
-	micIcon.Parent = statusFrame
-	
-	local statusText = Instance.new("TextLabel")
-	statusText.Name = "StatusText"
-	statusText.Size = UDim2.new(0.7, 0, 1, 0)
-	statusText.Position = UDim2.new(0.3, 0, 0, 0)
-	statusText.Text = "Mic: Active"
-	statusText.TextColor3 = CONFIG.THEME.Text
-	statusText.TextScaled = true
-	statusText.BackgroundTransparency = 1
-	statusText.Font = Enum.Font.GothamMedium
-	statusText.TextXAlignment = Enum.TextXAlignment.Left
-	statusText.Parent = statusFrame
-	
-	-- Animation for mic activity
-	local pulseAnimation = Instance.new("BoolValue")
-	pulseAnimation.Name = "PulseAnimation"
-	pulseAnimation.Value = false
-	pulseAnimation.Parent = micIcon
-	
-	-- Return HUD components
-	return {
-		Billboard = billboard,
-		MainFrame = mainFrame,
-		ExecutorText = executorText,
-		ExecutorIcon = executorIcon,
-		UserName = userName,
-		UserId = userId,
-		MicIcon = micIcon,
-		StatusText = statusText,
-		ExecutorInfo = executorInfo,
-		Player = player
-	}
+-- Analyze messages for executor signatures
+function ConsoleSpy:AnalyzeMessage(message)
+    for executorName, patterns in pairs(self.KnownPrints) do
+        for _, pattern in ipairs(patterns) do
+            if message:find(pattern:lower()) then
+                if not self.DetectedExecutors[executorName] then
+                    self.DetectedExecutors[executorName] = {
+                        Count = 1,
+                        FirstSeen = os.time(),
+                        LastSeen = os.time(),
+                        Sample = message
+                    }
+                    print("[ConsoleSpy] Detected executor:", executorName)
+                else
+                    self.DetectedExecutors[executorName].Count += 1
+                    self.DetectedExecutors[executorName].LastSeen = os.time()
+                end
+                break
+            end
+        end
+    end
 end
 
--- HUD Manager
-local HUDManager = {
-	ActiveHUDs = {},
-	LocalExecutor = detectExecutor(),
-	LocalHUD = nil
+-- Notification Monitoring
+local NotificationSpy = {
+    DetectedNotifications = {},
+    NotificationFrame = nil
 }
 
-function HUDManager:Initialize()
-	print("Social HUD Initialized | Executor: " .. self.LocalExecutor)
-	
-	-- Create HUD for local player
-	local localPlayer = Players.LocalPlayer
-	self.LocalHUD = createHUD(localPlayer)
-	
-	-- Handle character added
-	localPlayer.CharacterAdded:Connect(function(character)
-		self:UpdateHUDAdornee(localPlayer, character)
-	end)
-	
-	-- Create HUDs for existing players
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= localPlayer then
-			self:AddPlayerHUD(player)
-		end
-	end
-	
-	-- Handle new players
-	Players.PlayerAdded:Connect(function(player)
-		self:AddPlayerHUD(player)
-	end)
-	
-	-- Handle player leaving
-	Players.PlayerRemoving:Connect(function(player)
-		self:RemovePlayerHUD(player)
-	end)
-	
-	-- Toggle visibility with keybind
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if not gameProcessed and input.KeyCode == Enum.KeyCode.H then
-			self:ToggleHUDVisibility()
-		end
-	end)
-	
-	-- Update mic status randomly (simulating voice activity)
-	spawn(function()
-		while wait(math.random(3, 10)) do
-			self:UpdateMicStatus()
-		end
-	end)
-	
-	-- Enable local HUD after a delay
-	wait(2)
-	if self.LocalHUD and self.LocalHUD.Billboard then
-		self.LocalHUD.Billboard.Enabled = true
-		print("Local player HUD activated")
-	end
+function NotificationSpy:MonitorNotifications()
+    -- Create invisible frame to detect notifications
+    if not self.NotificationFrame and CoreGui:FindFirstChild("RobloxGui") then
+        local RobloxGui = CoreGui:FindFirstChild("RobloxGui")
+        if RobloxGui then
+            -- Check for notification containers
+            self:ScanForNotifications(RobloxGui)
+        end
+    end
 end
 
-function HUDManager:AddPlayerHUD(player)
-	local hud = createHUD(player)
-	self.ActiveHUDs[player.Name] = hud
-	
-	-- Handle character added for other players
-	player.CharacterAdded:Connect(function(character)
-		self:UpdateHUDAdornee(player, character)
-	end)
-	
-	-- Enable HUD after character loads
-	if player.Character then
-		self:UpdateHUDAdornee(player, player.Character)
-	end
-	
-	-- Enable HUD after delay
-	spawn(function()
-		wait(1)
-		if hud and hud.Billboard then
-			hud.Billboard.Enabled = true
-		end
-	end)
-	
-	print("HUD created for " .. player.Name)
+function NotificationSpy:ScanForNotifications(parent)
+    -- Look for common notification UI patterns
+    local function checkChild(child)
+        if child:IsA("Frame") or child:IsA("TextLabel") or child:IsA("TextButton") then
+            local text = child.Text or child:GetFullName()
+            if text then
+                text = text:lower()
+                
+                -- Check for executor-related text in notifications
+                local executors = {
+                    ["injected"] = "Generic Injector",
+                    ["executor"] = "Generic Executor",
+                    ["script loaded"] = "Script Loader",
+                    ["welcome"] = "Welcome Notification",
+                    ["cracked"] = "Cracked Version"
+                }
+                
+                for pattern, executorType in pairs(executors) do
+                    if text:find(pattern) then
+                        if not self.DetectedNotifications[executorType] then
+                            self.DetectedNotifications[executorType] = {
+                                Text = text,
+                                Time = os.time(),
+                                UIElement = child:GetFullName()
+                            }
+                            print("[NotificationSpy] Detected notification:", executorType)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Recursively scan
+    for _, child in ipairs(parent:GetChildren()) do
+        checkChild(child)
+        if #child:GetChildren() > 0 then
+            self:ScanForNotifications(child)
+        end
+    end
 end
 
-function HUDManager:RemovePlayerHUD(player)
-	local hud = self.ActiveHUDs[player.Name]
-	if hud and hud.Billboard then
-		hud.Billboard:Destroy()
-	end
-	self.ActiveHUDs[player.Name] = nil
+-- Enhanced HUD with Console Intelligence
+local AdvancedHUD = {
+    ActiveHUDs = {},
+    PlayerData = {},
+    ConsoleIntel = {},
+    DistanceCache = {}
+}
+
+function AdvancedHUD:Initialize()
+    print("=== Advanced Social HUD Initialized ===")
+    print("Console Spy System: ACTIVE")
+    print("Notification Monitoring: ACTIVE")
+    
+    -- Start console monitoring
+    ConsoleSpy:HookConsole()
+    
+    -- Start periodic notification scanning
+    spawn(function()
+        while wait(5) do
+            NotificationSpy:MonitorNotifications()
+        end
+    end
+    
+    -- Main HUD loop
+    self:MainLoop()
 end
 
-function HUDManager:UpdateHUDAdornee(player, character)
-	local hud = (player == Players.LocalPlayer) and self.LocalHUD or self.ActiveHUDs[player.Name]
-	
-	if hud and hud.Billboard then
-		-- Wait for head to exist
-		repeat wait(0.1) until character:FindFirstChild("Head")
-		
-		hud.Billboard.Adornee = character.Head
-		hud.Billboard.Parent = character.Head
-		
-		-- Update player name
-		if hud.UserName then
-			hud.UserName.Text = player.Name
-		end
-	end
+function AdvancedHUD:CreateIntelligentHUD(player)
+    -- Determine executor using multiple methods
+    local executorInfo = self:DetermineExecutor(player)
+    local deviceInfo = self:DetectDevice(player)
+    
+    -- Create Billboard GUI
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = player.Name .. "_IntelHUD"
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(6, 0, 2, 0)
+    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    billboard.MaxDistance = 150
+    billboard.Enabled = true
+    
+    -- Main Container
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(1, 0, 1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    mainFrame.BackgroundTransparency = 0.15
+    mainFrame.BorderColor3 = executorInfo.Color
+    mainFrame.BorderSizePixel = 2
+    mainFrame.Parent = billboard
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = mainFrame
+    
+    -- Gradient effect
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 30)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+    })
+    gradient.Parent = mainFrame
+    
+    -- Intel Header
+    local intelFrame = Instance.new("Frame")
+    intelFrame.Name = "IntelFrame"
+    intelFrame.Size = UDim2.new(1, -10, 0.25, 0)
+    intelFrame.Position = UDim2.new(0, 5, 0, 5)
+    intelFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    intelFrame.BackgroundTransparency = 0.3
+    intelFrame.Parent = mainFrame
+    
+    local intelCorner = Instance.new("UICorner")
+    intelCorner.CornerRadius = UDim.new(0, 6)
+    intelCorner.Parent = intelFrame
+    
+    -- Executor Display
+    local executorDisplay = Instance.new("TextLabel")
+    executorDisplay.Name = "ExecutorDisplay"
+    executorDisplay.Size = UDim2.new(1, 0, 1, 0)
+    executorDisplay.Text = executorInfo.Icon .. " " .. executorInfo.Name
+    executorDisplay.TextColor3 = executorInfo.Color
+    executorDisplay.TextScaled = true
+    executorDisplay.BackgroundTransparency = 1
+    executorDisplay.Font = Enum.Font.GothamBold
+    executorDisplay.TextStrokeTransparency = 0.7
+    executorDisplay.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    executorDisplay.Parent = intelFrame
+    
+    -- Player Info Section
+    local infoFrame = Instance.new("Frame")
+    infoFrame.Name = "InfoFrame"
+    infoFrame.Size = UDim2.new(1, -10, 0.4, 0)
+    infoFrame.Position = UDim2.new(0, 5, 0.3, 0)
+    infoFrame.BackgroundTransparency = 1
+    infoFrame.Parent = mainFrame
+    
+    -- Player Name
+    local playerName = Instance.new("TextLabel")
+    playerName.Name = "PlayerName"
+    playerName.Size = UDim2.new(1, 0, 0.5, 0)
+    playerName.Text = player.Name
+    playerName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    playerName.TextScaled = true
+    playerName.BackgroundTransparency = 1
+    playerName.Font = Enum.Font.GothamSemibold
+    playerName.Parent = infoFrame
+    
+    -- Device Info
+    local deviceInfoLabel = Instance.new("TextLabel")
+    deviceInfoLabel.Name = "DeviceInfo"
+    deviceInfoLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    deviceInfoLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    deviceInfoLabel.Text = deviceInfo.Icon .. " " .. deviceInfo.Type
+    deviceInfoLabel.TextColor3 = deviceInfo.Color
+    deviceInfoLabel.TextScaled = true
+    deviceInfoLabel.BackgroundTransparency = 1
+    deviceInfoLabel.Font = Enum.Font.GothamMedium
+    deviceInfoLabel.Parent = infoFrame
+    
+    -- Console Intel Section
+    local consoleFrame = Instance.new("Frame")
+    consoleFrame.Name = "ConsoleFrame"
+    consoleFrame.Size = UDim2.new(1, -10, 0.3, 0)
+    consoleFrame.Position = UDim2.new(0, 5, 0.75, 0)
+    consoleFrame.BackgroundColor3 = Color3.fromRGB(30, 0, 0)
+    consoleFrame.BackgroundTransparency = 0.7
+    consoleFrame.Parent = mainFrame
+    
+    local consoleCorner = Instance.new("UICorner")
+    consoleCorner.CornerRadius = UDim.new(0, 5)
+    consoleCorner.Parent = consoleFrame
+    
+    -- Console Intel Text
+    local consoleText = Instance.new("TextLabel")
+    consoleText.Name = "ConsoleText"
+    consoleText.Size = UDim2.new(1, 0, 1, 0)
+    consoleText.Text = "🕵️ Console: Scanning..."
+    consoleText.TextColor3 = Color3.fromRGB(255, 100, 100)
+    consoleText.TextScaled = true
+    consoleText.BackgroundTransparency = 1
+    consoleText.Font = Enum.Font.GothamMedium
+    consoleText.Parent = consoleFrame
+    
+    -- Store HUD data
+    self.ActiveHUDs[player.Name] = {
+        Billboard = billboard,
+        MainFrame = mainFrame,
+        ExecutorDisplay = executorDisplay,
+        DeviceInfo = deviceInfoLabel,
+        ConsoleText = consoleText,
+        Player = player,
+        ExecutorInfo = executorInfo,
+        DeviceInfoData = deviceInfo,
+        Scale = 1.0,
+        LastUpdate = 0
+    }
+    
+    return self.ActiveHUDs[player.Name]
 end
 
-function HUDManager:ToggleHUDVisibility()
-	local isVisible = self.LocalHUD.Billboard.Enabled
-	self.LocalHUD.Billboard.Enabled = not isVisible
-	
-	-- Toggle other HUDs
-	for _, hud in pairs(self.ActiveHUDs) do
-		if hud and hud.Billboard then
-			hud.Billboard.Enabled = not isVisible
-		end
-	end
-	
-	print("HUD Visibility: " .. tostring(not isVisible))
+function AdvancedHUD:DetermineExecutor(player)
+    -- Multi-method executor detection
+    local detectionResults = {}
+    
+    -- Method 1: Console print analysis
+    for executorName, data in pairs(ConsoleSpy.DetectedExecutors) do
+        table.insert(detectionResults, {
+            Name = executorName,
+            Confidence = math.min(data.Count * 0.3, 1.0),
+            Method = "Console Prints",
+            Data = data
+        })
+    end
+    
+    -- Method 2: Global variable checks
+    local globalChecks = {
+        ["Synapse X"] = function() return (syn and syn.request) and 0.8 or 0 end,
+        ["KRNL"] = function() return (KRNL_LOADED or get_hui) and 0.7 or 0 end,
+        ["ScriptWare"] = function() return (identifyexecutor and identifyexecutor():find("ScriptWare")) and 0.75 or 0 end,
+        ["Fluxus"] = function() return (fluxus and fluxus.version) and 0.7 or 0 end,
+        ["Electron"] = function() return (ELECTRON_LOADED) and 0.6 or 0 end
+    }
+    
+    for executorName, checkFunc in pairs(globalChecks) do
+        local confidence = checkFunc()
+        if confidence > 0 then
+            table.insert(detectionResults, {
+                Name = executorName,
+                Confidence = confidence,
+                Method = "Global Variables",
+                Data = {}
+            })
+        end
+    end
+    
+    -- Method 3: Notification analysis
+    for notifType, notifData in pairs(NotificationSpy.DetectedNotifications) do
+        table.insert(detectionResults, {
+            Name = notifType,
+            Confidence = 0.5,
+            Method = "UI Notifications",
+            Data = notifData
+        })
+    end
+    
+    -- Select best result
+    local bestResult = {Name = "Unknown", Confidence = 0}
+    for _, result in ipairs(detectionResults) do
+        if result.Confidence > bestResult.Confidence then
+            bestResult = result
+        end
+    end
+    
+    -- Get executor info
+    local executorConfig = CONFIG.EXECUTORS[bestResult.Name] or CONFIG.EXECUTORS["Unknown"]
+    
+    return {
+        Name = bestResult.Name,
+        Color = executorConfig.Color,
+        Icon = executorConfig.Icon,
+        Confidence = bestResult.Confidence,
+        DetectionMethod = bestResult.Method,
+        RawData = bestResult.Data
+    }
 end
 
-function HUDManager:UpdateMicStatus()
-	-- Simulate mic activity
-	local statuses = {"Active", "Muted", "Talking", "Inactive"}
-	local randomStatus = statuses[math.random(1, #statuses)]
-	
-	-- Update local HUD
-	if self.LocalHUD and self.LocalHUD.StatusText then
-		self.LocalHUD.StatusText.Text = "Mic: " .. randomStatus
-		
-		-- Pulse animation for talking
-		if randomStatus == "Talking" then
-			self:AnimateMicIcon(self.LocalHUD.MicIcon)
-		end
-	end
-	
-	-- Update random player HUDs
-	for _, hud in pairs(self.ActiveHUDs) do
-		if hud and hud.StatusText and math.random(1, 3) == 1 then
-			local playerStatus = statuses[math.random(1, #statuses)]
-			hud.StatusText.Text = "Mic: " .. playerStatus
-			
-			if playerStatus == "Talking" then
-				self:AnimateMicIcon(hud.MicIcon)
-			end
-		end
-	end
+function AdvancedHUD:DetectDevice(player)
+    local platform = UserInputService:GetPlatform()
+    local deviceType = "Unknown"
+    
+    if platform == Enum.Platform.Windows then
+        deviceType = "PC"
+    elseif platform == Enum.Platform.Android or platform == Enum.Platform.IOS then
+        -- Check screen size for tablet vs phone
+        local screenSize = workspace.CurrentCamera.ViewportSize
+        if math.min(screenSize.X, screenSize.Y) > 1000 then
+            deviceType = "Tablet"
+        else
+            deviceType = "Mobile"
+        end
+    elseif platform == Enum.Platform.XBoxOne or platform == Enum.Platform.PS4 or platform == Enum.Platform.PS5 then
+        deviceType = "Console"
+    elseif platform == Enum.Platform.VR then
+        deviceType = "VR"
+    end
+    
+    return {
+        Type = deviceType,
+        Icon = CONFIG.DEVICES[deviceType].Icon,
+        Color = CONFIG.DEVICES[deviceType].Color,
+        Platform = tostring(platform)
+    }
 end
 
-function HUDManager:AnimateMicIcon(micIcon)
-	if not micIcon then return end
-	
-	spawn(function()
-		local originalSize = micIcon.Size
-		local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, 0, true)
-		
-		local tween = TweenService:Create(micIcon, tweenInfo, {
-			TextColor3 = Color3.fromRGB(255, 255, 100),
-			TextTransparency = 0
-		})
-		
-		tween:Play()
-		wait(1)
-		
-		-- Reset
-		TweenService:Create(micIcon, TweenInfo.new(0.5), {
-			TextColor3 = CONFIG.THEME.Secondary
-		}):Play()
-	end)
+function AdvancedHUD:UpdateDistanceScaling(playerName, hudData)
+    local localPlayer = Players.LocalPlayer
+    local localChar = localPlayer.Character
+    local targetPlayer = hudData.Player
+    local targetChar = targetPlayer.Character
+    
+    if not localChar or not targetChar then
+        hudData.Billboard.Size = UDim2.new(6, 0, 2, 0)
+        return
+    end
+    
+    local localHead = localChar:FindFirstChild("Head")
+    local targetHead = targetChar:FindFirstChild("Head")
+    
+    if not localHead or not targetHead then return end
+    
+    -- Calculate distance
+    local distance = (localHead.Position - targetHead.Position).Magnitude
+    
+    -- Dynamic scaling based on distance
+    local minScale = 0.4  -- 40% size at max distance
+    local maxScale = 1.0  -- 100% size up close
+    local closeDist = 15  -- Full scale at this distance
+    local farDist = 100   -- Min scale at this distance
+    
+    -- Calculate scale factor (inverse relationship)
+    local scaleFactor
+    if distance <= closeDist then
+        scaleFactor = maxScale
+    elseif distance >= farDist then
+        scaleFactor = minScale
+    else
+        -- Linear interpolation between distances
+        local t = (distance - closeDist) / (farDist - closeDist)
+        scaleFactor = maxScale - (maxScale - minScale) * t
+    end
+    
+    -- Smooth scaling transition
+    local currentScale = hudData.Scale or 1.0
+    local newScale = currentScale + (scaleFactor - currentScale) * 0.1
+    
+    -- Apply scaling to billboard size
+    local baseSize = UDim2.new(6, 0, 2, 0)
+    hudData.Billboard.Size = UDim2.new(
+        baseSize.X.Scale * newScale, 
+        baseSize.X.Offset * newScale,
+        baseSize.Y.Scale * newScale, 
+        baseSize.Y.Offset * newScale
+    )
+    
+    -- Update transparency based on distance
+    local transparency = math.clamp((distance - 50) / 100, 0, 0.5)
+    hudData.MainFrame.BackgroundTransparency = 0.15 + transparency
+    
+    -- Store current scale
+    hudData.Scale = newScale
+    self.DistanceCache[playerName] = {
+        Distance = distance,
+        Scale = newScale,
+        Time = os.time()
+    }
 end
 
--- Initialize HUD Manager
+function AdvancedHUD:UpdateConsoleIntel(hudData)
+    local consoleInfo = ""
+    local playerName = hudData.Player.Name
+    
+    -- Check for console prints from this player's executor
+    local totalPrints = 0
+    local latestExecutor = nil
+    
+    for executorName, data in pairs(ConsoleSpy.DetectedExecutors) do
+        totalPrints += data.Count
+        if not latestExecutor or data.LastSeen > latestExecutor then
+            latestExecutor = executorName
+        end
+    end
+    
+    -- Build console intelligence string
+    if totalPrints > 0 then
+        if #ConsoleSpy.DetectedExecutors > 1 then
+            consoleInfo = string.format("🕵️ %d executors detected", totalPrints)
+        else
+            consoleInfo = string.format("🔍 Prints: %d", totalPrints)
+        end
+    else
+        consoleInfo = "📡 Listening for prints..."
+    end
+    
+    -- Add notification info if available
+    local notifCount = 0
+    for _ in pairs(NotificationSpy.DetectedNotifications) do
+        notifCount += 1
+    end
+    
+    if notifCount > 0 then
+        consoleInfo = consoleInfo .. string.format(" | 📢 %d notifs", notifCount)
+    end
+    
+    -- Update HUD display
+    if hudData.ConsoleText then
+        hudData.ConsoleText.Text = consoleInfo
+        
+        -- Pulse effect when new data arrives
+        if hudData.LastIntelUpdate ~= totalPrints then
+            hudData.ConsoleText.TextColor3 = Color3.fromRGB(255, 150, 150)
+            
+            spawn(function()
+                wait(0.3)
+                if hudData.ConsoleText then
+                    hudData.ConsoleText.TextColor3 = Color3.fromRGB(255, 100, 100)
+                end
+            end)
+            
+            hudData.LastIntelUpdate = totalPrints
+        end
+    end
+end
+
+function AdvancedHUD:MainLoop()
+    -- Initialize for all existing players
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            self:CreateIntelligentHUD(player)
+            
+            -- Attach to character
+            player.CharacterAdded:Connect(function(char)
+                wait(1) -- Wait for character to load
+                local hud = self.ActiveHUDs[player.Name]
+                if hud and hud.Billboard then
+                    local head = char:FindFirstChild("Head")
+                    if head then
+                        hud.Billboard.Adornee = head
+                        hud.Billboard.Parent = head
+                    end
+                end
+            end)
+            
+            if player.Character then
+                local head = player.Character:FindFirstChild("Head")
+                if head then
+                    local hud = self.ActiveHUDs[player.Name]
+                    if hud then
+                        hud.Billboard.Adornee = head
+                        hud.Billboard.Parent = head
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Handle new players
+    Players.PlayerAdded:Connect(function(player)
+        wait(2) -- Give time for executor to load
+        self:CreateIntelligentHUD(player)
+    end)
+    
+    -- Handle player leaving
+    Players.PlayerRemoving:Connect(function(player)
+        local hud = self.ActiveHUDs[player.Name]
+        if hud and hud.Billboard then
+            hud.Billboard:Destroy()
+        end
+        self.ActiveHUDs[player.Name] = nil
+    end)
+    
+    -- Main update loop
+    spawn(function()
+        while wait(0.1) do -- Update 10 times per second
+            for playerName, hudData in pairs(self.ActiveHUDs) do
+                -- Update distance scaling
+                self:UpdateDistanceScaling(playerName, hudData)
+                
+                -- Update console intelligence
+                self:UpdateConsoleIntel(hudData)
+                
+                -- Update executor confidence display
+                if hudData.ExecutorDisplay and hudData.ExecutorInfo then
+                    local confidenceText = ""
+                    if hudData.ExecutorInfo.Confidence > 0.7 then
+                        confidenceText = " 🔒"
+                    elseif hudData.ExecutorInfo.Confidence > 0.4 then
+                        confidenceText = " ⚠️"
+                    else
+                        confidenceText = " ❓"
+                    end
+                    
+                    hudData.ExecutorDisplay.Text = 
+                        hudData.ExecutorInfo.Icon .. " " .. 
+                        hudData.ExecutorInfo.Name .. 
+                        confidenceText
+                end
+            end
+        end
+    end)
+    
+    -- Keybind to toggle HUD
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed and input.KeyCode == Enum.KeyCode.H then
+            for _, hudData in pairs(self.ActiveHUDs) do
+                if hudData.Billboard then
+                    hudData.Billboard.Enabled = not hudData.Billboard.Enabled
+                end
+            end
+            print("[HUD] Toggled visibility")
+        end
+    end)
+end
+
+-- Initialize everything
 spawn(function()
-	wait(1) -- Wait for game to load
-	HUDManager:Initialize()
-	
-	-- Welcome message
-	print("==========================================")
-	print("Modern Social HUD v2.0")
-	print("Executor Detected: " .. HUDManager.LocalExecutor)
-	print("Press H to toggle HUD visibility")
-	print("Black & Red Theme - Compatible with Xenomorph")
-	print("==========================================")
+    wait(2) -- Wait for game to fully load
+    AdvancedHUD:Initialize()
+    
+    -- Print startup message
+    print("==========================================")
+    print("ADVANCED SOCIAL HUD v3.0")
+    print("Console Spy System: ACTIVE")
+    print("Notification Monitor: ACTIVE")
+    print("Dynamic Scaling: ENABLED")
+    print("Executor Intelligence: COLLECTING")
+    print("Press H to toggle HUD visibility")
+    print("==========================================")
 end)
 
--- Return HUD Manager for external access
-return HUDManager
+-- Return systems for external access
+return {
+    HUD = AdvancedHUD,
+    ConsoleSpy = ConsoleSpy,
+    NotificationSpy = NotificationSpy
+}
